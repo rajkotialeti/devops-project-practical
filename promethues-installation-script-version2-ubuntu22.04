@@ -1,0 +1,100 @@
+#!/bin/bash
+
+# This script installs Prometheus, sets up the necessary directories, 
+# configures the Prometheus service, and starts it.
+
+# Exit the script if any command fails
+set -e
+
+# Update package list
+echo "Updating package list..."
+sudo apt update
+
+# Create a system group and user for Prometheus
+echo "Creating Prometheus user and group..."
+sudo groupadd --system prometheus
+sudo useradd -s /sbin/nologin --system -g prometheus prometheus
+
+# Create necessary directories
+echo "Creating directories for Prometheus..."
+sudo mkdir -p /etc/prometheus
+sudo mkdir -p /var/lib/prometheus
+
+# Download Prometheus binary
+echo "Downloading Prometheus..."
+wget https://github.com/prometheus/prometheus/releases/download/v2.43.0/prometheus-2.43.0.linux-amd64.tar.gz
+
+# Extract the downloaded tar file
+echo "Extracting Prometheus..."
+tar vxf prometheus-*.tar.gz
+
+# Navigate to the extracted directory
+cd prometheus-2.43.0.linux-amd64
+
+# Move Prometheus binary files to /usr/local/bin
+echo "Moving binaries to /usr/local/bin..."
+sudo mv prometheus /usr/local/bin
+sudo mv promtool /usr/local/bin
+
+# Set proper ownership for Prometheus binaries
+echo "Setting ownership for Prometheus binaries..."
+sudo chown prometheus:prometheus /usr/local/bin/prometheus
+sudo chown prometheus:prometheus /usr/local/bin/promtool
+
+# Move configuration files to /etc/prometheus
+echo "Moving configuration files..."
+sudo mv consoles /etc/prometheus
+sudo mv console_libraries /etc/prometheus
+sudo mv prometheus.yml /etc/prometheus
+
+# Set proper ownership for configuration files
+echo "Setting ownership for configuration files..."
+sudo chown prometheus:prometheus /etc/prometheus
+sudo chown -R prometheus:prometheus /etc/prometheus/consoles
+sudo chown -R prometheus:prometheus /etc/prometheus/console_libraries
+sudo chown -R prometheus:prometheus /var/lib/prometheus
+
+# Create Prometheus systemd service file
+echo "Creating Prometheus systemd service file..."
+cat <<EOF | sudo tee /etc/systemd/system/prometheus.service > /dev/null
+[Unit]
+Description=Prometheus
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=prometheus
+Group=prometheus
+Type=simple
+ExecStart=/usr/local/bin/prometheus \\
+    --config.file /etc/prometheus/prometheus.yml \\
+    --storage.tsdb.path /var/lib/prometheus/ \\
+    --web.console.templates=/etc/prometheus/consoles \\
+    --web.console.libraries=/etc/prometheus/console_libraries
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Reload systemd to pick up the new unit file
+echo "Reloading systemd daemon..."
+sudo systemctl daemon-reload
+
+# Enable Prometheus to start on boot
+echo "Enabling Prometheus service to start on boot..."
+sudo systemctl enable prometheus
+
+# Start Prometheus service
+echo "Starting Prometheus service..."
+sudo systemctl start prometheus
+
+# Check the status of Prometheus service
+echo "Checking the status of Prometheus service..."
+sudo systemctl status prometheus --no-pager
+
+# Allow Prometheus port 9090 through the firewall
+echo "Allowing Prometheus port 9090 through the firewall..."
+sudo ufw allow 9090/tcp
+
+# Final message
+echo "Prometheus installation and configuration complete."
